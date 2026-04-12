@@ -1,0 +1,57 @@
+name: 🚀 Deploy stdreux_api (PAT)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚀 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          script: |
+            echo "🚀 Starting Deployment..."
+
+            cd ~/public_html/testapp/stdreux_api
+
+            echo "🔐 Setting Git with PAT"
+            git config --global credential.helper store
+
+            echo "https://${{ secrets.GH_USERNAME }}:${{ secrets.GH_PAT }}@github.com" > ~/.git-credentials
+
+            echo "📥 Pull latest code"
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "🧹 Cleaning old build"
+            rm -rf .next
+            rm -rf dist
+            rm -rf node_modules
+
+            echo "📦 Installing dependencies"
+            npm install --legacy-peer-deps
+
+            echo "🏗 Building project"
+            npm run build
+
+            echo "🔄 Restarting PM2"
+
+            echo "🔥 Stopping old PM2 process (hard refresh)" 
+            pm2 delete stdreux_api || true 
+            
+            echo "🚀 Starting NestJS app from dist/main.js" 
+            PORT=8000 pm2 start dist/main.js --name "stdreux_api"
+
+            pm2 save
+
+            pm2 list
+
+            echo "✅ Deployment Completed!"
