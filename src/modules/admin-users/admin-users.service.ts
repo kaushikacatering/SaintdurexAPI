@@ -28,7 +28,7 @@ export class AdminUsersService {
         r.role_description
       FROM "user" u
       LEFT JOIN roles r ON u.role_id = r.role_id
-      WHERE 1=1
+      WHERE (u.is_customer IS NULL OR u.is_customer != 1)
     `;
     const params: any[] = [];
     let paramIndex = 1;
@@ -107,7 +107,7 @@ export class AdminUsersService {
         return filteredUser;
       });
 
-    let countQuery = 'SELECT COUNT(*) FROM "user" WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) FROM "user" WHERE (is_customer IS NULL OR is_customer != 1)';
     const countParams: any[] = [];
     let countParamIndex = 1;
 
