@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { S3Service } from '../../common/services/s3.service';
+import { FileStorageService } from '../../common/services/file-storage.service';
 
 @Injectable()
 export class AdminBlogsService {
@@ -8,7 +8,7 @@ export class AdminBlogsService {
 
   constructor(
     private dataSource: DataSource,
-    private s3Service: S3Service,
+    private fileStorageService: FileStorageService,
   ) {}
 
   /**
@@ -374,16 +374,16 @@ export class AdminBlogsService {
   async deleteBlog(blogId: number) {
     const blog = await this.getBlog(blogId);
 
-    // Delete featured image from S3 if exists
+    // Delete featured image if exists
     if (blog.featured_image_url) {
       try {
-        // Extract key from URL or use full URL as key
-        const key = blog.featured_image_url.includes('amazonaws.com/') 
-          ? blog.featured_image_url.split('amazonaws.com/')[1]
+        // Extract key from URL
+        const key = blog.featured_image_url.includes('/uploads/')
+          ? blog.featured_image_url.split('/uploads/')[1]
           : blog.featured_image_url;
-        await this.s3Service.deleteFromS3(key);
+        await this.fileStorageService.deleteFile(key);
       } catch (error) {
-        this.logger.warn(`Failed to delete image from S3: ${blog.featured_image_url}`, error);
+        this.logger.warn(`Failed to delete image: ${blog.featured_image_url}`, error);
       }
     }
 
@@ -403,14 +403,13 @@ export class AdminBlogsService {
       // Clean filename to remove any path separators
       const cleanFileName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `blogs/${Date.now()}-${cleanFileName}`;
-      const result = await this.s3Service.uploadToS3(file.buffer, 'stn_assets', fileName, file.mimetype);
+      const result = await this.fileStorageService.uploadFile(file.buffer, 'stn_assets', fileName);
       
       // Log the upload result for debugging
       this.logger.log(`Blog image uploaded successfully: ${result.url}`);
       this.logger.log(`Blog image details:`, {
         url: result.url,
         key: result.key,
-        bucket: result.bucket,
         fileName: fileName,
       });
       

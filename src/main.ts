@@ -4,6 +4,8 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import * as crypto from 'crypto';
+import * as express from 'express';
+import * as path from 'path';
 
 // Ensure crypto is available globally for TypeORM
 if (typeof globalThis.crypto === 'undefined') {
@@ -93,6 +95,10 @@ async function bootstrap() {
   app.getHttpAdapter().get('/', (req, res) => {
     res.redirect('/api-docs');
   });
+
+  // Serve local uploads directory as static files
+  const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+  app.use('/uploads', express.static(uploadsDir));
 
   const port = process.env.PORT || 8000;
   await app.listen(port, '0.0.0.0');

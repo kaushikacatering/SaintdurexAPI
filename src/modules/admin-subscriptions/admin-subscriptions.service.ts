@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class AdminSubscriptionsService {
   private readonly logger = new Logger(AdminSubscriptionsService.name);
+  private tablesChecked = false;
 
   constructor(
     private dataSource: DataSource,
@@ -14,6 +15,51 @@ export class AdminSubscriptionsService {
     private notificationService: NotificationService,
     private configService: ConfigService,
   ) { }
+
+  /**
+   * Ensure subscription_schedules table exists before querying
+   */
+  private async ensureTablesExist(): Promise<void> {
+    if (this.tablesChecked) return;
+
+    try {
+      const schedulesCheck = await this.dataSource.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables
+          WHERE table_name = 'subscription_schedules'
+        ) as exists
+      `);
+
+      if (!schedulesCheck[0]?.exists) {
+        await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS subscription_schedules (
+            schedule_id SERIAL PRIMARY KEY,
+            subscription_order_id INT NOT NULL UNIQUE,
+            next_delivery_date TIMESTAMP,
+            frequency_days INT NOT NULL,
+            is_active BOOLEAN DEFAULT true,
+            is_paused BOOLEAN DEFAULT false,
+            paused_at TIMESTAMP,
+            resume_date TIMESTAMP,
+            last_generated_order_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS idx_subscription_schedules_order ON subscription_schedules(subscription_order_id)
+        `);
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS idx_subscription_schedules_active ON subscription_schedules(is_active)
+        `);
+        this.logger.log('Created subscription_schedules table');
+      }
+
+      this.tablesChecked = true;
+    } catch (error) {
+      this.logger.error('Error ensuring subscription tables exist:', error);
+    }
+  }
 
   /**
    * List subscriptions (standing orders)
@@ -24,6 +70,7 @@ export class AdminSubscriptionsService {
     limit?: number;
     offset?: number;
   }) {
+    await this.ensureTablesExist();
     const { status, search, limit = 100, offset = 0 } = filters;
 
     let query = `
@@ -160,6 +207,7 @@ export class AdminSubscriptionsService {
    * Get single subscription
    */
   async getSubscription(id: number) {
+    await this.ensureTablesExist();
     const query = `
       SELECT 
         o.*,

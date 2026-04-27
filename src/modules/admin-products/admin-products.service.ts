@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { S3Service } from '../../common/services/s3.service';
+import { FileStorageService } from '../../common/services/file-storage.service';
 import { PricingService } from '../../common/services/pricing.service';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class AdminProductsService {
 
   constructor(
     private dataSource: DataSource,
-    private s3Service: S3Service,
+    private fileStorageService: FileStorageService,
     private pricingService: PricingService,
   ) { }
 
@@ -510,16 +510,16 @@ export class AdminProductsService {
 
       // Handle image uploads
       if (files && Array.isArray(files) && files.length > 0) {
-        this.logger.log(`Starting upload of ${files.length} image(s) to S3...`);
+        this.logger.log(`Starting upload of ${files.length} image(s)...`);
         for (const file of files) {
           try {
             const tempProductId = Date.now();
-            const result = await this.s3Service.uploadProductImage(
+            const result = await this.fileStorageService.uploadProductImage(
               file.buffer,
               tempProductId,
               file.originalname,
             );
-            this.logger.log(`✅ Successfully uploaded ${file.originalname} to S3: ${result.url}`);
+            this.logger.log(`✅ Successfully uploaded ${file.originalname}: ${result.url}`);
             uploadedImageUrls.push(result.url);
           } catch (error: any) {
             this.logger.error(`❌ Failed to upload ${file.originalname}:`, error);
@@ -839,15 +839,15 @@ export class AdminProductsService {
 
       // Handle image uploads
       if (files && Array.isArray(files) && files.length > 0) {
-        this.logger.log(`Starting upload of ${files.length} image(s) to S3 for product update...`);
+        this.logger.log(`Starting upload of ${files.length} image(s) for product update...`);
         for (const file of files) {
           try {
-            const result = await this.s3Service.uploadProductImage(
+            const result = await this.fileStorageService.uploadProductImage(
               file.buffer,
               Number(id),
               file.originalname,
             );
-            this.logger.log(`✅ Successfully uploaded ${file.originalname} to S3: ${result.url}`);
+            this.logger.log(`✅ Successfully uploaded ${file.originalname}: ${result.url}`);
             uploadedImageUrls.push(result.url);
           } catch (error: any) {
             this.logger.error(`❌ Failed to upload ${file.originalname}:`, error);

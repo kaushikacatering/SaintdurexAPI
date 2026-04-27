@@ -4,6 +4,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export interface UploadResult {
   url: string;
@@ -16,35 +17,68 @@ export class S3Service {
   private readonly logger = new Logger(S3Service.name);
   private s3Client: S3Client;
   private bucketName: string;
+  private hasCredentials: boolean;
+  private uploadBaseDir: string;
+  private baseUrl: string;
 
   constructor(private configService: ConfigService) {
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
     const region = this.configService.get<string>('AWS_REGION') || 'ap-southeast-2';
 
-    if (!accessKeyId || !secretAccessKey) {
-      this.logger.warn('⚠️  WARNING: AWS credentials not found in environment variables!');
+    this.hasCredentials = !!(accessKeyId && secretAccessKey);
+
+    if (!this.hasCredentials) {
+      this.logger.warn('⚠️  WARNING: AWS credentials not found — using local file storage fallback');
     }
 
     this.s3Client = new S3Client({
       region: region,
-      credentials: accessKeyId && secretAccessKey ? {
-        accessKeyId: accessKeyId,
-        secretAccessKey: secretAccessKey,
+      credentials: this.hasCredentials ? {
+        accessKeyId: accessKeyId!,
+        secretAccessKey: secretAccessKey!,
       } : undefined,
     });
 
     this.bucketName = this.configService.get<string>('AWS_S3_BUCKET_NAME') || 'caterly-uploads-unique-id';
 
+    // Local fallback configuration
+    this.uploadBaseDir = this.configService.get<string>('UPLOAD_DIR') || path.join(process.cwd(), 'uploads');
+    this.baseUrl = this.configService.get<string>('API_BASE_URL') || this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+
     this.logger.log('S3 Configuration:', {
       region: region,
       bucket: this.bucketName,
-      hasCredentials: !!(accessKeyId && secretAccessKey),
+      hasCredentials: this.hasCredentials,
+      fallbackDir: this.hasCredentials ? 'N/A' : this.uploadBaseDir,
     });
   }
 
   /**
-   * Upload a file to S3
+   * Upload a file to local filesystem (fallback when S3 is not configured)
+   */
+  private async uploadToLocal(
+    file: Buffer,
+    folder: string,
+    fileName?: string,
+  ): Promise<UploadResult> {
+    const fileExtension = fileName ? path.extname(fileName) : '';
+    const finalFileName = fileName || `${crypto.randomUUID()}${fileExtension}`;
+    const dir = path.join(this.uploadBaseDir, folder);
+    const filePath = path.join(dir, finalFileName);
+
+    // Ensure directory exists
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, file);
+
+    const key = `${folder}/${finalFileName}`;
+    const url = `${this.baseUrl}/uploads/${key}`;
+
+    return { url, key, bucket: 'local' };
+  }
+
+  /**
+   * Upload a file to S3 (or local filesystem fallback)
    */
   async uploadToS3(
     file: Buffer,
@@ -53,6 +87,12 @@ export class S3Service {
     contentType: string = 'application/octet-stream',
     contentDisposition?: string,
   ): Promise<UploadResult> {
+    // Fallback to local storage when S3 credentials are not configured
+    if (!this.hasCredentials) {
+      this.logger.log(`S3 credentials not available, saving to local filesystem: ${folder}/${fileName || 'auto'}`);
+      return this.uploadToLocal(file, folder, fileName);
+    }
+
     try {
       const fileExtension = fileName ? path.extname(fileName) : '';
       const key = fileName ? `${folder}/${fileName}` : `${folder}/${crypto.randomUUID()}${fileExtension}`;
@@ -160,9 +200,22 @@ export class S3Service {
   }
 
   /**
-   * Delete a file from S3
+   * Delete a file from S3 or local storage
    */
   async deleteFromS3(key: string): Promise<boolean> {
+    if (!this.hasCredentials) {
+      try {
+        const filePath = path.join(this.uploadBaseDir, key);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        return true;
+      } catch (error) {
+        this.logger.error('Local file delete error:', error);
+        return false;
+      }
+    }
+
     try {
       const command = new DeleteObjectCommand({
         Bucket: this.bucketName,
@@ -180,6 +233,10 @@ export class S3Service {
    * Get a signed URL for temporary access to a private file
    */
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    if (!this.hasCredentials) {
+      return `${this.baseUrl}/uploads/${key}`;
+    }
+
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucketName,

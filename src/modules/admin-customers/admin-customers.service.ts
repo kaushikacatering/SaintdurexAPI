@@ -484,7 +484,36 @@ export class AdminCustomersService implements OnModuleInit {
   }
 
   async delete(id: number): Promise<void> {
-    await this.dataSource.query('DELETE FROM customer WHERE customer_id = $1', [id]);
+    // Check if customer exists
+    const customer = await this.dataSource.query('SELECT customer_id FROM customer WHERE customer_id = $1', [id]);
+    if (!customer.length) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    // Delete related records to avoid foreign key constraint violations
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Delete customer product option discounts
+      await queryRunner.query('DELETE FROM customer_product_option_discount WHERE customer_id = $1', [id]);
+      // Delete customer product discounts
+      await queryRunner.query('DELETE FROM customer_product_discount WHERE customer_id = $1', [id]);
+      // Delete API history records
+      await queryRunner.query('DELETE FROM api_history WHERE customer_id = $1', [id]);
+      // Nullify customer_id on orders (preserve orders for record-keeping)
+      await queryRunner.query('UPDATE orders SET customer_id = NULL WHERE customer_id = $1', [id]);
+      // Delete the customer
+      await queryRunner.query('DELETE FROM customer WHERE customer_id = $1', [id]);
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async getWholesaleCustomers(query: any): Promise<any> {
