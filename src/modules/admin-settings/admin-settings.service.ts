@@ -68,6 +68,7 @@ export class AdminSettingsService {
         { key: 'company_email', value: '', category: 'general', type: 'string', description: 'Company Email' },
         { key: 'company_phone', value: '', category: 'general', type: 'string', description: 'Company Phone' },
         { key: 'company_address', value: '', category: 'general', type: 'string', description: 'Company Address' },
+        { key: 'company_abn', value: '', category: 'general', type: 'string', description: 'Company ABN' },
         { key: 'gst_rate', value: '10', category: 'general', type: 'number', description: 'GST Rate (%)' },
         { key: 'default_delivery_fee', value: '0', category: 'general', type: 'number', description: 'Default Delivery Fee' },
       ];
@@ -147,6 +148,16 @@ export class AdminSettingsService {
         const typeResult = await manager.query('SELECT setting_type FROM settings WHERE setting_key = $1', [snakeKey]);
 
         if (typeResult.length === 0) {
+          // Key doesn't exist yet - insert it as a new string setting
+          const stringValue = value === null || value === undefined ? '' : String(value);
+          const category = snakeKey.startsWith('smtp_') ? 'email' : 
+                           snakeKey.startsWith('stripe_') ? 'payment' : 'general';
+          await manager.query(
+            `INSERT INTO settings (setting_key, setting_value, setting_category, setting_type, description)
+             VALUES ($1, $2, $3, 'string', $4)
+             ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2, updated_at = CURRENT_TIMESTAMP`,
+            [snakeKey, stringValue, category, camelKey]
+          );
           continue;
         }
 

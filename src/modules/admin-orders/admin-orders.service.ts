@@ -1857,7 +1857,8 @@ export class AdminOrdersService implements OnModuleInit {
       throw new BadRequestException('Customer email not found');
     }
 
-    const invoiceUrl = await this.invoiceService.getInvoiceUrl(id);
+    // Generate invoice PDF buffer for attachment
+    const invoicePdfBuffer = await this.invoiceService.generatePDFBuffer(id);
     const companyName = this.configService.get<string>('COMPANY_NAME') || 'St Dreux Coffee';
     const companyPhone = this.configService.get<string>('COMPANY_PHONE') || '';
     const companyEmail = this.configService.get<string>('COMPANY_EMAIL') || '';
@@ -1873,7 +1874,6 @@ export class AdminOrdersService implements OnModuleInit {
     .header h1 { margin: 0; font-size: 24px; color: #ffffff; }
     .content { padding: 30px 20px; }
     .footer { padding: 20px; text-align: center; font-size: 12px; color: #777; border-top: 1px solid #eee; }
-    .button { display: inline-block; padding: 12px 24px; background-color: #28a745; color: #ffffff !important; text-decoration: none; border-radius: 5px; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -1884,9 +1884,7 @@ export class AdminOrdersService implements OnModuleInit {
       <p>Dear ${order.customer_order_name},</p>
       <p>Thank you for your order!</p>
       ${customMessage ? `<p>${customMessage}</p>` : ''}
-      <div style="text-align: center; margin: 40px 0;">
-        <a href="${invoiceUrl}" class="button"><span style="color: #ffffff !important;">Download Invoice</span></a>
-      </div>
+      <p>Please find your invoice attached to this email.</p>
       <p>If you have any questions, please contact us at ${companyPhone} or ${companyEmail}.</p>
       <p>Kind regards,<br/>${companyName} Team</p>
     </div>
@@ -1901,6 +1899,13 @@ export class AdminOrdersService implements OnModuleInit {
       to: recipientEmail,
       subject: `Order Confirmation #${order.order_id} - ${companyName}`,
       html: emailHtml,
+      attachments: [
+        {
+          filename: `invoice-${order.order_id}.pdf`,
+          content: invoicePdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ],
     });
 
     if (!result.success) {
@@ -1909,7 +1914,7 @@ export class AdminOrdersService implements OnModuleInit {
     }
 
     this.logger.log(`Order email sent to ${recipientEmail} for order #${id}`);
-    return { message: 'Email sent successfully', sentTo: recipientEmail, messageId: result.messageId };
+    return { message: 'Email sent successfully', email_sent: true, sentTo: recipientEmail, sent_to: [recipientEmail], messageId: result.messageId };
   }
 
   /**
@@ -1935,7 +1940,7 @@ export class AdminOrdersService implements OnModuleInit {
       'Customer';
 
     const orderTotal = parseFloat(order.order_total || 0);
-    const companyName = this.configService.get<string>('COMPANY_NAME') || 'Sendrix';
+    const companyName = this.configService.get<string>('COMPANY_NAME') || 'St Dreux Coffee';
 
     // Generate payment link (deep link to payment page)
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') ||
@@ -1943,7 +1948,8 @@ export class AdminOrdersService implements OnModuleInit {
       'http://localhost:3000';
     const paymentLink = `${frontendUrl}/payment?order_id=${id}`;
 
-    const invoiceUrl = await this.invoiceService.getInvoiceUrl(id);
+    // Generate invoice PDF for attachment
+    const invoicePdfBuffer = await this.invoiceService.generatePDFBuffer(id);
 
     const emailHtml = `
 <!DOCTYPE html>
@@ -1979,7 +1985,7 @@ export class AdminOrdersService implements OnModuleInit {
         <h3 style="margin-top: 0;">Order Summary</h3>
         <div class="order-info"><strong>Order Number:</strong> #${id}</div>
         <div class="amount">Amount Due: $${orderTotal.toFixed(2)}</div>
-        <div class="order-info"><strong>Order Date:</strong> ${new Date(order.date_added || new Date()).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+        <div class="order-info"><strong>Order Date:</strong> ${new Date(order.date_added || new Date()).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'Australia/Sydney' })}</div>
       </div>
 
       <div style="text-align: center; margin: 30px 0;">
@@ -1990,7 +1996,7 @@ export class AdminOrdersService implements OnModuleInit {
         <strong>Note:</strong> Payment must be made 7 days from the delivery date. Late payment fees will incur after 21 days.
       </div>
 
-      <p>You can also <a href="${invoiceUrl}" style="color: #2952E6;">download your invoice</a> for more details.</p>
+      <p>Your invoice is attached to this email for your records.</p>
       
       <p>If you have any questions or need assistance, please don't hesitate to contact us.</p>
       
@@ -2009,6 +2015,13 @@ export class AdminOrdersService implements OnModuleInit {
       to: recipientEmail,
       subject: `Payment Required - Order #${id} - ${companyName}`,
       html: emailHtml,
+      attachments: [
+        {
+          filename: `invoice-${id}.pdf`,
+          content: invoicePdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ],
     });
 
     if (!result.success) {
@@ -2020,6 +2033,7 @@ export class AdminOrdersService implements OnModuleInit {
     return {
       success: true,
       message: 'Payment link email sent successfully',
+      sent_to: [recipientEmail],
       sentTo: recipientEmail,
       paymentLink: paymentLink,
     };

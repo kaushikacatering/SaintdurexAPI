@@ -502,6 +502,12 @@ export class AdminCustomersService implements OnModuleInit {
       await queryRunner.query('DELETE FROM customer_product_discount WHERE customer_id = $1', [id]);
       // Delete API history records
       await queryRunner.query('DELETE FROM api_history WHERE customer_id = $1', [id]);
+      // Nullify customer_id in payment_history (preserve payment records)
+      await queryRunner.query('UPDATE payment_history SET customer_id = NULL WHERE customer_id = $1', [id]);
+      // Nullify customer_id in product reviews (preserve reviews)
+      try {
+        await queryRunner.query('UPDATE product_review SET customer_id = NULL WHERE customer_id = $1', [id]);
+      } catch (e) { /* table may not exist */ }
       // Nullify customer_id on orders (preserve orders for record-keeping)
       await queryRunner.query('UPDATE orders SET customer_id = NULL WHERE customer_id = $1', [id]);
       // Delete the customer

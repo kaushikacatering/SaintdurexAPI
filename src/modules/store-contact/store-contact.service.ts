@@ -65,7 +65,7 @@ export class StoreContactService {
     const adminEmail =
       this.configService.get<string>('ADMIN_EMAIL') ||
       this.configService.get<string>('FROM_EMAIL') ||
-      'info@caterly.com.au';
+      'ernest@stdreux.com.au';
     const companyName = this.configService.get<string>('COMPANY_NAME') || 'St. Dreux Coffee';
 
     const emailHtml = `

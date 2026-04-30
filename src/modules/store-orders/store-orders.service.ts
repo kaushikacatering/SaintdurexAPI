@@ -377,6 +377,19 @@ export class StoreOrdersService {
       }
 
       // Create order
+      // Get default location_id (first active location, typically Sydney)
+      let defaultLocationId: number | null = null;
+      try {
+        const locationResult = await queryRunner.query(
+          `SELECT location_id FROM locations WHERE location_status = 1 ORDER BY location_id ASC LIMIT 1`
+        );
+        if (locationResult.length > 0) {
+          defaultLocationId = locationResult[0].location_id;
+        }
+      } catch (e) {
+        // locations table may not exist or has different schema
+      }
+
       const orderQuery = `
         INSERT INTO orders (
           customer_id,
@@ -399,8 +412,9 @@ export class StoreOrdersService {
           customer_from,
           payment_method,
           payment_status,
-          payment_transaction_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+          payment_transaction_id,
+          location_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         RETURNING order_id
       `;
 
@@ -426,6 +440,7 @@ export class StoreOrdersService {
         payment_method || 'stripe',
         finalPaymentStatus,
         payment_intent_id || null,
+        defaultLocationId, // Assign default location (Sydney) for frontend orders
       ]);
 
       const orderId = orderResult[0].order_id;

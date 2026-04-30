@@ -16,11 +16,18 @@ export interface InvoiceData {
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
+  customer_type?: string;
   company_name?: string;
   department_name?: string;
   location_name?: string;
   location_address?: string;
   location_phone?: string;
+  location_email?: string;
+  location_abn?: string;
+  location_company_name?: string;
+  location_account_name?: string;
+  location_account_number?: string;
+  location_bsb?: string;
   delivery_address?: string;
   items: Array<{
     product_name: string;
@@ -117,8 +124,14 @@ export class InvoiceService {
         comp.company_abn,
         d.department_name,
         loc.location_name,
-        NULL as location_address,
-        NULL as location_phone,
+        loc.pickup_address as location_address,
+        loc.contact as location_phone,
+        loc.remittance_email as location_email,
+        loc.abn as location_abn,
+        loc.company_name as location_company_name,
+        loc.account_name as location_account_name,
+        loc.account_number as location_account_number,
+        loc.bsb as location_bsb,
         o.coupon_id,
         o.coupon_discount as stored_coupon_discount,
         cp.coupon_code,
@@ -296,11 +309,18 @@ export class InvoiceService {
       customer_name: order.customer_name || 'N/A',
       customer_email: order.customer_email,
       customer_phone: order.customer_phone,
+      customer_type: order.customer_type || 'Guest',
       company_name: order.company_name,
       department_name: order.department_name,
       location_name: order.location_name,
       location_address: order.location_address,
       location_phone: order.location_phone,
+      location_email: order.location_email,
+      location_abn: order.location_abn,
+      location_company_name: order.location_company_name,
+      location_account_name: order.location_account_name,
+      location_account_number: order.location_account_number,
+      location_bsb: order.location_bsb,
       delivery_address: order.delivery_address,
       items: itemsWithOptions,
       subtotal,
@@ -453,9 +473,11 @@ export class InvoiceService {
         }
 
         // Company Information - Display in top right corner
-        const companyEmail = companySettings.companyEmail;
-        const companyPhone = companySettings.companyPhone;
-        const companyABN = companySettings.companyAbn;
+        // Use location details if available, otherwise fall back to settings
+        const displayCompanyName = data.location_company_name || companyName;
+        const displayEmail = data.location_email || companySettings.companyEmail;
+        const displayPhone = data.location_phone || companySettings.companyPhone;
+        const displayABN = data.location_abn || companySettings.companyAbn;
 
         doc.fontSize(7).font('Helvetica').fillColor(darkGray);
         const addressStartY = headerY + 1;
@@ -465,20 +487,20 @@ export class InvoiceService {
 
         // Company Name (bold)
         doc.font('Helvetica-Bold').fontSize(8);
-        doc.text(companyName, addressStartX, addressY, { align: 'right', width: addressWidth });
+        doc.text(displayCompanyName, addressStartX, addressY, { align: 'right', width: addressWidth });
         addressY += 9;
 
         // Company Email
         doc.font('Helvetica').fontSize(7);
-        doc.text(`Email: ${companyEmail}`, addressStartX, addressY, { align: 'right', width: addressWidth });
+        doc.text(`Email: ${displayEmail}`, addressStartX, addressY, { align: 'right', width: addressWidth });
         addressY += 7;
 
         // Company Phone
-        doc.text(`Phone: ${companyPhone}`, addressStartX, addressY, { align: 'right', width: addressWidth });
+        doc.text(`Phone: ${displayPhone}`, addressStartX, addressY, { align: 'right', width: addressWidth });
         addressY += 7;
 
         // Company ABN
-        doc.text(companyABN, addressStartX, addressY, { align: 'right', width: addressWidth });
+        doc.text(`ABN: ${displayABN.replace(/^ABN:\s*/i, '')}`, addressStartX, addressY, { align: 'right', width: addressWidth });
         addressY += 7;
 
         doc.fillColor(darkGray);
@@ -500,12 +522,13 @@ export class InvoiceService {
         doc.font('Helvetica').text(`#${data.order_id}`, 130, detailsY);
 
         doc.font('Helvetica-Bold').text('Order Date:', 40, detailsY + 9);
-        // Format date in Australian time (no timezone, just date)
+        // Format date in Australian timezone (AEST/AEDT)
         const quoteDate = new Date(data.order_date);
         const auDateStr = quoteDate.toLocaleDateString('en-AU', {
           day: '2-digit',
           month: '2-digit',
           year: '2-digit',
+          timeZone: 'Australia/Sydney',
         });
         doc.font('Helvetica').text(auDateStr, 130, detailsY + 9);
 
@@ -547,6 +570,12 @@ export class InvoiceService {
 
         if (data.location_name) {
           doc.text(`Location: ${data.location_name}`, 360, billToInfoY, { width: 200 });
+          billToInfoY += 9;
+        }
+
+        // Customer Type
+        if (data.customer_type) {
+          doc.text(`Customer Type: ${data.customer_type}`, 360, billToInfoY, { width: 200 });
           billToInfoY += 9;
         }
 
@@ -632,7 +661,9 @@ export class InvoiceService {
           }
 
           doc.text(item.quantity.toString(), 360, tableY + 1);
-          doc.text(`$${item.price.toFixed(2)}`, 410, tableY + 1);
+          // Fix unit price: if price is 0 but total > 0, calculate from total/quantity
+          const unitPrice = item.price > 0 ? item.price : (item.total > 0 && item.quantity > 0 ? item.total / item.quantity : 0);
+          doc.text(`$${unitPrice.toFixed(2)}`, 410, tableY + 1);
           doc.font('Helvetica-Bold');
           doc.text(`$${item.total.toFixed(2)}`, 500, tableY + 1, { align: 'right', width: 60 });
           doc.font('Helvetica');
@@ -737,17 +768,41 @@ export class InvoiceService {
         }
 
         // Footer Section
-        const footerY = Math.min(pageHeight - 60, currentY + 20);
+        const footerY = Math.min(pageHeight - 80, currentY + 20);
 
         doc.moveTo(40, footerY).lineTo(560, footerY).strokeColor(borderGray).lineWidth(0.5).stroke();
 
-        if (footerY < pageHeight - 55) {
+        if (footerY < pageHeight - 75) {
           let footerTextY = footerY + 5;
 
+          // Bank Details from Location
+          if (data.location_account_name || data.location_account_number || data.location_bsb) {
+            doc.fontSize(7).font('Helvetica-Bold').fillColor(primaryColor);
+            doc.text('Bank Details:', 40, footerTextY, { width: 520, align: 'left' });
+            footerTextY += 9;
+
+            doc.font('Helvetica').fontSize(7).fillColor(darkGray);
+            if (data.location_account_name) {
+              doc.text(`Account Name: ${data.location_account_name}`, 40, footerTextY, { width: 520 });
+              footerTextY += 8;
+            }
+            if (data.location_bsb) {
+              doc.text(`BSB: ${data.location_bsb}`, 40, footerTextY, { width: 260 });
+              if (data.location_account_number) {
+                doc.text(`Account Number: ${data.location_account_number}`, 260, footerTextY, { width: 260 });
+              }
+              footerTextY += 8;
+            } else if (data.location_account_number) {
+              doc.text(`Account Number: ${data.location_account_number}`, 40, footerTextY, { width: 520 });
+              footerTextY += 8;
+            }
+            footerTextY += 3;
+          }
+
           // Location Information
-          if (data.location_name || data.location_address || data.location_phone) {
+          if (data.location_name || data.location_address) {
             doc.fontSize(6).font('Helvetica-Bold').fillColor(darkGray);
-            doc.text('Location Information:', 40, footerTextY, { width: 520, align: 'left' });
+            doc.text('Location:', 40, footerTextY, { width: 520, align: 'left' });
             footerTextY += 7;
 
             doc.font('Helvetica').fontSize(6).fillColor(lightGray);
@@ -758,9 +813,6 @@ export class InvoiceService {
             }
             if (data.location_address) {
               locationInfo.push(data.location_address);
-            }
-            if (data.location_phone) {
-              locationInfo.push(`Phone: ${data.location_phone}`);
             }
 
             if (locationInfo.length > 0) {
@@ -773,8 +825,10 @@ export class InvoiceService {
           }
 
           // Thank you message
+          const thankYouEmail = data.location_email || companySettings.companyEmail;
+          const thankYouPhone = data.location_phone || companySettings.companyPhone;
           doc.fontSize(6).font('Helvetica').fillColor(lightGray);
-          doc.text(`Thank you for your business! For inquiries: ${companyEmail} or ${companyPhone}`, 40, footerTextY, {
+          doc.text(`Thank you for your business! For inquiries: ${thankYouEmail} or ${thankYouPhone}`, 40, footerTextY, {
             width: 520,
             align: 'center',
           });

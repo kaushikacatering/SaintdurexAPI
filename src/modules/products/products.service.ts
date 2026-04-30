@@ -563,6 +563,20 @@ export class ProductsService {
     await queryRunner.startTransaction();
 
     try {
+      // Delete customer product option discounts for this product
+      await queryRunner.query('DELETE FROM customer_product_option_discount WHERE product_id = $1', [id]);
+
+      // Delete customer product discounts for this product
+      await queryRunner.query('DELETE FROM customer_product_discount WHERE product_id = $1', [id]);
+
+      // Delete product reviews
+      try {
+        await queryRunner.query('DELETE FROM product_review WHERE product_id = $1', [id]);
+      } catch (e) { /* table may not exist */ }
+
+      // Nullify product_id in order_product (preserve order history)
+      await queryRunner.query('UPDATE order_product SET product_id = NULL WHERE product_id = $1', [id]);
+
       // Delete product options
               await queryRunner.query('DELETE FROM product_option WHERE product_id = $1', [id]);
 
