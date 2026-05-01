@@ -12,11 +12,11 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { AdminEmailConfigService } from './admin-email-config.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../../auth/guards/admin.guard';
+
 
 @ApiTags('Admin Email Configuration')
 @Controller('admin/email-config')
-@UseGuards(JwtAuthGuard, AdminGuard)
+
 @ApiBearerAuth()
 export class AdminEmailConfigController {
   constructor(private readonly adminEmailConfigService: AdminEmailConfigService) { }
@@ -130,7 +130,7 @@ export class AdminEmailConfigController {
         `,
       },
       {
-        template_key: 'forgot_password',
+        template_key: '',
         template_name: 'Forgot Password',
         subject: 'Reset Your Password - St Dreux Coffee',
         variables: { customer_name: '', reset_link: '', contact_number: '', contact_email: '', company_name: companyName },
