@@ -394,13 +394,18 @@ export class InvoiceService {
         const companySettings = await this.getCompanySettings();
         const companyName = companySettings.companyName;
 
+        // Determine if this is a quote or an invoice based on order_status
+        const isQuote = data.order_status === 0;
+        const documentType = isQuote ? 'Quote' : 'Invoice';
+        const documentTypeUpper = isQuote ? 'QUOTE' : 'INVOICE';
+
         const doc = new PDFDocument({
           margin: 40,
           size: 'A4',
           info: {
-            Title: `Invoice #${data.order_id}`,
+            Title: `${documentType} #${data.order_id}`,
             Author: companyName,
-            Subject: 'Invoice',
+            Subject: documentType,
           },
         });
         const buffers: Buffer[] = [];
@@ -505,21 +510,21 @@ export class InvoiceService {
 
         doc.fillColor(darkGray);
 
-        // Invoice Title Section
+        // Document Title Section
         const titleY = Math.max(headerY + logoHeight + 8, addressY + 5);
         doc.rect(40, titleY, 520, 25).fillColor(primaryColor).fill().fillColor('#ffffff');
 
         doc.fontSize(18).font('Helvetica-Bold').fillColor('#ffffff');
-        doc.text('INVOICE', 40, titleY + 7, { width: 520, align: 'center' });
+        doc.text(documentTypeUpper, 40, titleY + 7, { width: 520, align: 'center' });
 
         doc.fillColor(darkGray);
 
-        // Invoice Details Section
+        // Document Details Section
         const detailsY = titleY + 32;
         doc.fontSize(8).font('Helvetica');
 
-        doc.font('Helvetica-Bold').text('Invoice Number:', 40, detailsY);
-        doc.font('Helvetica').text(`#${data.order_id}`, 130, detailsY);
+        doc.font('Helvetica-Bold').text(`${documentType} Number:`, 40, detailsY);
+        doc.font('Helvetica').text(`#${data.order_id}`, 140, detailsY);
 
         doc.font('Helvetica-Bold').text('Order Date:', 40, detailsY + 9);
         // Format date in Australian timezone (AEST/AEDT)
