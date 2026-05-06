@@ -167,6 +167,15 @@ export class StoreOrdersController {
     );
   }
 
+  @Get(':id/public-view')
+  @ApiOperation({ summary: 'Get order details for payment/invoice (no auth required)' })
+  @ApiParam({ name: 'id', type: Number })
+  async getOrderPublicView(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.storeOrdersService.getOrderPublicView(id);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -956,6 +956,137 @@ export class StoreOrdersService {
   }
 
   /**
+   * Get order details for public view (payment link / invoice from email)
+   * No user authentication required - used for admin-sent payment links
+   */
+  async getOrderPublicView(orderId: number) {
+    // Get order with coupon info
+    const orderQuery = `
+      SELECT 
+        o.*,
+        cp.coupon_code,
+        cp.type as coupon_type
+      FROM orders o
+      LEFT JOIN coupon cp ON o.coupon_id = cp.coupon_id
+      WHERE o.order_id = $1
+    `;
+
+    const orderResult = await this.dataSource.query(orderQuery, [orderId]);
+    const order = orderResult[0];
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // Get order products with product names
+    const productsQuery = `
+      SELECT 
+        op.*,
+        p.product_name,
+        p.product_image
+      FROM order_product op
+      LEFT JOIN product p ON op.product_id = p.product_id
+      WHERE op.order_id = $1
+      ORDER BY op.sort_order, op.order_product_id
+    `;
+    const productsResult = await this.dataSource.query(productsQuery, [orderId]);
+
+    // Get order product options for each product
+    const items: any[] = [];
+    let subtotal = 0;
+
+    for (const product of productsResult) {
+      const optionsQuery = `
+        SELECT * FROM order_product_option 
+        WHERE order_product_id = $1
+      `;
+      const optionsResult = await this.dataSource.query(optionsQuery, [product.order_product_id]);
+
+      let itemTotal: number;
+      if (product.total !== null && product.total !== undefined) {
+        itemTotal = parseFloat(product.total);
+      } else {
+        const unitPrice = parseFloat(product.price || '0');
+        const qty = parseInt(product.quantity || '1', 10);
+        itemTotal = unitPrice * qty;
+      }
+      subtotal += itemTotal;
+
+      items.push({
+        product_id: product.product_id,
+        product_name: product.product_name || 'Unknown Product',
+        quantity: parseInt(product.quantity || '1', 10),
+        price: parseFloat(product.price || '0'),
+        total: itemTotal,
+        product_image: product.product_image,
+        options: optionsResult.map((opt: any) => ({
+          option_name: opt.option_name,
+          option_value: opt.option_value,
+          option_quantity: opt.option_quantity,
+        })),
+      });
+    }
+
+    // Calculate breakdown
+    const deliveryFee = parseFloat(order.delivery_fee || '0');
+    let wholesaleDiscount = 0;
+    const afterWholesaleDiscount = subtotal - wholesaleDiscount;
+
+    let couponDiscount = 0;
+    let couponCode = order.coupon_code || null;
+
+    if (order.coupon_id) {
+      if (order.coupon_discount && parseFloat(order.coupon_discount) > 0) {
+        couponDiscount = parseFloat(order.coupon_discount);
+      } else if (order.coupon_type) {
+        const couponQuery = `SELECT coupon_discount FROM coupon WHERE coupon_id = $1`;
+        const couponResult = await this.dataSource.query(couponQuery, [order.coupon_id]);
+        if (couponResult[0]) {
+          if (order.coupon_type === 'P') {
+            couponDiscount = afterWholesaleDiscount * (parseFloat(couponResult[0].coupon_discount) / 100);
+          } else {
+            couponDiscount = parseFloat(couponResult[0].coupon_discount);
+          }
+          couponDiscount = Math.min(couponDiscount, afterWholesaleDiscount);
+        }
+      }
+    }
+
+    const afterDiscount = afterWholesaleDiscount - couponDiscount;
+    const gst = 0;
+    const calculatedTotal = Math.round((afterDiscount + gst + deliveryFee) * 100) / 100;
+
+    return {
+      order: {
+        order_id: order.order_id,
+        order_total: order.order_total,
+        order_status: order.order_status,
+        payment_status: order.payment_status,
+        delivery_address: order.delivery_address,
+        delivery_phone: order.delivery_phone,
+        delivery_email: order.delivery_email,
+        firstname: order.firstname,
+        lastname: order.lastname,
+        date_added: order.date_added,
+        delivery_date: order.delivery_date,
+        delivery_time: order.delivery_time,
+        delivery_fee: deliveryFee.toFixed(2),
+        status_name: order.order_status === 5 ? 'Completed' : (order.order_status === 1 ? 'New' : (order.order_status === 2 ? 'Paid' : (order.order_status === 4 ? 'Awaiting Approval' : (order.order_status === 7 ? 'Approved' : 'Updated')))),
+        items,
+        subtotal: subtotal.toFixed(2),
+        wholesale_discount: wholesaleDiscount.toFixed(2),
+        coupon_discount: couponDiscount.toFixed(2),
+        coupon_code: couponCode,
+        after_wholesale_discount: afterWholesaleDiscount.toFixed(2),
+        after_discount: afterDiscount.toFixed(2),
+        gst: gst.toFixed(2),
+        total: calculatedTotal.toFixed(2),
+        calculated_total: calculatedTotal.toFixed(2),
+      },
+    };
+  }
+
+  /**
    * Get single order details
    */
   async getOrder(userId: number, orderId: number) {
