@@ -1002,14 +1002,17 @@ export class StoreOrdersService {
       `;
       const optionsResult = await this.dataSource.query(optionsQuery, [product.order_product_id]);
 
-      let itemTotal: number;
-      if (product.total !== null && product.total !== undefined) {
-        itemTotal = parseFloat(product.total);
-      } else {
-        const unitPrice = parseFloat(product.price || '0');
-        const qty = parseInt(product.quantity || '1', 10);
-        itemTotal = unitPrice * qty;
-      }
+      const productBaseTotal = parseFloat(product.total) || 0;
+
+      // Calculate options total (same logic as invoice service)
+      let optionsTotal = 0;
+      optionsResult.forEach((opt: any) => {
+        optionsTotal += (parseFloat(opt.option_price) || 0) * (parseInt(opt.option_quantity) || 1);
+      });
+
+      // Check for double counting
+      const isDoubleCount = productBaseTotal > 0 && Math.abs(productBaseTotal - optionsTotal) < 0.01;
+      const itemTotal = isDoubleCount ? productBaseTotal : (productBaseTotal + optionsTotal);
       subtotal += itemTotal;
 
       items.push({
@@ -1145,16 +1148,17 @@ export class StoreOrdersService {
       `;
       const optionsResult = await this.dataSource.query(optionsQuery, [product.order_product_id]);
 
-      // Calculate item total (do not multiply 'total' by quantity again)
-      // op.total already represents the full line total saved at checkout, including quantity and options
-      let itemTotal: number;
-      if (product.total !== null && product.total !== undefined) {
-        itemTotal = parseFloat(product.total);
-      } else {
-        const unitPrice = parseFloat(product.price || '0');
-        const qty = parseInt(product.quantity || '1', 10);
-        itemTotal = unitPrice * qty;
-      }
+      // Calculate item total including option prices (matching invoice service logic)
+      const productBaseTotal = parseFloat(product.total) || 0;
+
+      let optionsTotal = 0;
+      optionsResult.forEach((opt: any) => {
+        optionsTotal += (parseFloat(opt.option_price) || 0) * (parseInt(opt.option_quantity) || 1);
+      });
+
+      // Check for double counting
+      const isDoubleCount = productBaseTotal > 0 && Math.abs(productBaseTotal - optionsTotal) < 0.01;
+      const itemTotal = isDoubleCount ? productBaseTotal : (productBaseTotal + optionsTotal);
       subtotal += itemTotal;
 
       items.push({
