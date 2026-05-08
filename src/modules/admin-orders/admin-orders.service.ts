@@ -305,7 +305,8 @@ export class AdminOrdersService implements OnModuleInit {
         delivery_date: row.delivery_date_time ? new Date(row.delivery_date_time).toISOString().split('T')[0] : null,
         delivery_time: row.delivery_date_time ? new Date(row.delivery_date_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : null,
         subtotal,
-        order_total: parseFloat(row.order_total || 0),
+        order_total: calculatedTotal,
+        calculated_total: calculatedTotal,
         order_status: row.order_status,
         status_name: row.order_status === 5 ? 'Completed' : (row.order_status === 1 ? 'New' : (row.order_status === 2 ? 'Paid' : (row.order_status === 4 ? 'Awaiting Approval' : (row.order_status === 7 ? 'Approved' : 'Updated')))),
         standing_order: row.standing_order,
@@ -970,7 +971,8 @@ export class AdminOrdersService implements OnModuleInit {
 
       const order = orderResult[0];
 
-      // Delete existing order products
+      // Delete existing order products (cascade will handle order_product_option if FK exists)
+      await queryRunner.query(`DELETE FROM order_product_option WHERE order_id = $1`, [id]);
       await queryRunner.query(`DELETE FROM order_product WHERE order_id = $1`, [id]);
 
       // Create updated order products
@@ -980,9 +982,10 @@ export class AdminOrdersService implements OnModuleInit {
         const sortOrder = product.sort_order !== undefined ? product.sort_order : index + 1;
         const excludeGst = product.exclude_gst !== undefined ? product.exclude_gst : 0;
 
-        await queryRunner.query(
+        const orderProductResult = await queryRunner.query(
           `INSERT INTO order_product (order_id, product_id, quantity, price, total, order_product_comment, sort_order, exclude_gst)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING order_product_id`,
           [
             id,
             product.product_id,
@@ -995,10 +998,31 @@ export class AdminOrdersService implements OnModuleInit {
           ],
         );
 
-        // Handle product options/add-ons if any
+        const orderProductId = orderProductResult[0].order_product_id;
+
+        // Save product options/add-ons
         if (product.add_ons && Array.isArray(product.add_ons)) {
           for (const addon of product.add_ons) {
-            // Add-on logic here if needed
+            const optionQuantity = addon.option_quantity || addon.quantity || 1;
+            const optionPrice = parseFloat(addon.option_price || addon.price || 0);
+            const optionTotal = optionQuantity * optionPrice;
+
+            await queryRunner.query(
+              `INSERT INTO order_product_option (
+                order_id, order_product_id, product_option_id, option_name, option_value,
+                option_quantity, option_price, option_total
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                id,
+                orderProductId,
+                addon.product_option_id || 0,
+                addon.option_name || addon.name || '',
+                addon.option_value || '',
+                optionQuantity,
+                optionPrice,
+                optionTotal,
+              ],
+            );
           }
         }
       }
