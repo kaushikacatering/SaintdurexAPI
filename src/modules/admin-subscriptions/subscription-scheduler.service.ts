@@ -1,11 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { AdminOrdersService } from '../admin-orders/admin-orders.service';
 
 @Injectable()
 export class SubscriptionSchedulerService {
   private readonly logger = new Logger(SubscriptionSchedulerService.name);
 
-  constructor(private dataSource: DataSource) {}
+  constructor(
+    private dataSource: DataSource,
+    @Inject(forwardRef(() => AdminOrdersService))
+    private adminOrdersService: AdminOrdersService,
+  ) {}
 
   /**
    * Generate future orders for all active subscriptions
@@ -21,6 +26,7 @@ export class SubscriptionSchedulerService {
         o.customer_id,
         o.standing_order,
         o.delivery_date_time,
+        o.subscription_start_date,
         o.order_total,
         o.delivery_fee,
         o.customer_order_name,
@@ -63,7 +69,10 @@ export class SubscriptionSchedulerService {
     const frequencyDays = subscription.standing_order;
     if (!frequencyDays || frequencyDays === 0) return;
 
-    const startDate = new Date(subscription.delivery_date_time);
+    // Use subscription_start_date if available, otherwise fall back to delivery_date_time
+    const startDate = subscription.subscription_start_date 
+      ? new Date(subscription.subscription_start_date) 
+      : new Date(subscription.delivery_date_time);
     const now = new Date();
     
     // Calculate how many future orders we need (up to 6 months ahead)
@@ -438,6 +447,15 @@ export class SubscriptionSchedulerService {
       ]);
 
       await queryRunner.commitTransaction();
+
+      // Send payment link email for the newly created order
+      try {
+        await this.adminOrdersService.sendPaymentLink(newOrderId);
+        this.logger.log(`Payment link sent for auto-generated order #${newOrderId} from subscription #${subscription.order_id}`);
+      } catch (emailError) {
+        // Don't fail the order creation if email fails
+        this.logger.error(`Failed to send payment link for order #${newOrderId}:`, emailError);
+      }
 
       return {
         future_order_id: futureOrderId,

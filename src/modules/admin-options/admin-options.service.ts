@@ -21,7 +21,8 @@ export class AdminOptionsService {
               'sort_order', ov.sort_order,
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium
+              'wholesale_price_premium', ov.wholesale_price_premium,
+              'subscriber_price', ov.subscriber_price
             ) ORDER BY ov.sort_order
           )
           FROM option_value ov
@@ -72,7 +73,8 @@ export class AdminOptionsService {
               'sort_order', ov.sort_order,
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium
+              'wholesale_price_premium', ov.wholesale_price_premium,
+              'subscriber_price', ov.subscriber_price
             ) ORDER BY ov.sort_order
           )
           FROM option_value ov
@@ -110,6 +112,12 @@ export class AdminOptionsService {
           ) THEN
             ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
           END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+          ) THEN
+            ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
+          END IF;
         END
         $$;
       `);
@@ -120,8 +128,8 @@ export class AdminOptionsService {
         for (let i = 0; i < values.length; i++) {
           const value = values[i];
           await manager.query(
-            `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium) 
-             VALUES ($1, $2, $3, $4, $5, $6)`,
+            `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               newOption.option_id,
               value.name,
@@ -129,6 +137,7 @@ export class AdminOptionsService {
               value.standard_price || 0,
               value.wholesale_price || (value.standard_price || 0) * 0.9,
               value.wholesale_price_premium ?? null,
+              value.subscriber_price ?? null,
             ]
           );
         }
@@ -145,7 +154,8 @@ export class AdminOptionsService {
                 'sort_order', ov.sort_order,
                 'standard_price', ov.standard_price,
                 'wholesale_price', ov.wholesale_price,
-                'wholesale_price_premium', ov.wholesale_price_premium
+                'wholesale_price_premium', ov.wholesale_price_premium,
+                'subscriber_price', ov.subscriber_price
               ) ORDER BY ov.sort_order
             )
             FROM option_value ov
@@ -172,6 +182,12 @@ export class AdminOptionsService {
             WHERE table_name = 'option_value' AND column_name = 'wholesale_price_premium'
           ) THEN
             ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+          ) THEN
+            ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
           END IF;
         END
         $$;
@@ -230,22 +246,23 @@ export class AdminOptionsService {
             // Update existing
             await manager.query(
               `UPDATE option_value 
-               SET name = $1, sort_order = $2, standard_price = $3, wholesale_price = $4, wholesale_price_premium = $5
-               WHERE option_value_id = $6`,
+               SET name = $1, sort_order = $2, standard_price = $3, wholesale_price = $4, wholesale_price_premium = $5, subscriber_price = $6
+               WHERE option_value_id = $7`,
               [
                 value.name,
                 value.sort_order || i + 1,
                 value.standard_price || 0,
                 value.wholesale_price || (value.standard_price || 0) * 0.9,
                 value.wholesale_price_premium ?? null,
+                value.subscriber_price ?? null,
                 value.option_value_id
               ]
             );
           } else {
             // Insert new
             await manager.query(
-              `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium) 
-               VALUES ($1, $2, $3, $4, $5, $6)`,
+              `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
               [
                 id,
                 value.name,
@@ -253,6 +270,7 @@ export class AdminOptionsService {
                 value.standard_price || 0,
                 value.wholesale_price || (value.standard_price || 0) * 0.9,
                 value.wholesale_price_premium ?? null,
+                value.subscriber_price ?? null,
               ]
             );
           }
@@ -270,7 +288,8 @@ export class AdminOptionsService {
                 'sort_order', ov.sort_order,
                 'standard_price', ov.standard_price,
                 'wholesale_price', ov.wholesale_price,
-                'wholesale_price_premium', ov.wholesale_price_premium
+                'wholesale_price_premium', ov.wholesale_price_premium,
+                'subscriber_price', ov.subscriber_price
               ) ORDER BY ov.sort_order
             )
             FROM option_value ov

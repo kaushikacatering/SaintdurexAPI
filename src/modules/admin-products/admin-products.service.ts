@@ -58,7 +58,8 @@ export class AdminProductsService {
       { name: 'show_other_info', sql: `ALTER TABLE product ADD COLUMN show_other_info boolean DEFAULT false` },
       { name: 'premium_discount_percentage', sql: `ALTER TABLE product ADD COLUMN premium_discount_percentage decimal(5,2)` },
       { name: 'product_price_premium', sql: `ALTER TABLE product ADD COLUMN product_price_premium decimal(10,2)` },
-      { name: 'premium_price_discounted', sql: `ALTER TABLE product ADD COLUMN premium_price_discounted decimal(10,2)` }
+      { name: 'premium_price_discounted', sql: `ALTER TABLE product ADD COLUMN premium_price_discounted decimal(10,2)` },
+      { name: 'subscriber_rate', sql: `ALTER TABLE product ADD COLUMN subscriber_rate decimal(10,2)` }
     ];
     for (const field of otherFields) {
       if (!columnMap.has(field.name)) {
@@ -111,7 +112,8 @@ export class AdminProductsService {
               'option_required', po.option_required,
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium
+              'wholesale_price_premium', ov.wholesale_price_premium,
+              'subscriber_price', ov.subscriber_price
             )
           )
           FROM product_option po
@@ -320,6 +322,7 @@ export class AdminProductsService {
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
               'wholesale_price_premium', ov.wholesale_price_premium,
+              'subscriber_price', ov.subscriber_price,
               'discount_percentage', 0
             )
           )
@@ -492,6 +495,7 @@ export class AdminProductsService {
       premium_discount_percentage?: number;
       product_price_premium?: number;
       premium_price_discounted?: number;
+      subscriber_rate?: number;
       product_desc_1?: string;
       product_desc_2?: string;
       product_desc_3?: string;
@@ -564,6 +568,7 @@ export class AdminProductsService {
         premium_discount_percentage,
         product_price_premium,
         premium_price_discounted,
+        subscriber_rate,
         product_desc_1,
         product_desc_2,
         product_desc_3,
@@ -652,6 +657,7 @@ export class AdminProductsService {
         'premium_discount_percentage',
         'product_price_premium',
         'premium_price_discounted',
+        'subscriber_rate',
         'product_desc_1',
         'product_desc_2',
         'product_desc_3',
@@ -683,6 +689,7 @@ export class AdminProductsService {
         premium_discount_percentage !== undefined ? premium_discount_percentage : null,
         product_price_premium !== undefined ? product_price_premium : null,
         premium_price_discounted !== undefined ? premium_price_discounted : null,
+        subscriber_rate !== undefined ? subscriber_rate : null,
         product_desc_1 || null,
         product_desc_2 || null,
         product_desc_3 || null,
@@ -821,6 +828,7 @@ export class AdminProductsService {
       premium_discount_percentage?: number;
       product_price_premium?: number;
       premium_price_discounted?: number;
+      subscriber_rate?: number;
       product_desc_1?: string;
       product_desc_2?: string;
       product_desc_3?: string;
@@ -891,6 +899,7 @@ export class AdminProductsService {
         premium_discount_percentage,
         product_price_premium,
         premium_price_discounted,
+        subscriber_rate,
         product_desc_1,
         product_desc_2,
         product_desc_3,
@@ -1033,6 +1042,10 @@ export class AdminProductsService {
       if (premium_price_discounted !== undefined) {
         updateFields.push(`premium_price_discounted = $${paramIndex++}`);
         updateParams.push(premium_price_discounted);
+      }
+      if (subscriber_rate !== undefined) {
+        updateFields.push(`subscriber_rate = $${paramIndex++}`);
+        updateParams.push(subscriber_rate);
       }
       if (product_desc_1 !== undefined) {
         updateFields.push(`product_desc_1 = $${paramIndex++}`);

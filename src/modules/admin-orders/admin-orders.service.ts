@@ -27,11 +27,12 @@ export class AdminOrdersService implements OnModuleInit {
       await this.dataSource.query(`
         ALTER TABLE orders 
         ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50),
-        ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'pending'
+        ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS subscription_start_date TIMESTAMP
       `);
-      this.logger.log('Ensured payment columns exist in orders table');
+      this.logger.log('Ensured payment and subscription columns exist in orders table');
     } catch (error) {
-      this.logger.error('Failed to add payment columns to orders table:', error);
+      this.logger.error('Failed to add columns to orders table:', error);
     }
   }
 
@@ -576,6 +577,7 @@ export class AdminOrdersService implements OnModuleInit {
         delivery_contact,
         delivery_details,
         standing_order = 0,
+        subscription_start_date,
         payment_method = 'stripe',
         products = [],
       } = createOrderDto;
@@ -679,8 +681,8 @@ export class AdminOrdersService implements OnModuleInit {
           customer_id, location_id, branch_id, shipping_method, delivery_date_time, delivery_fee, order_total,
           order_status, order_comments, coupon_id, coupon_discount, delivery_address, delivery_method,
           account_email, cost_center, delivery_contact, delivery_details, standing_order, user_id, customer_from,
-          payment_method, payment_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+          payment_method, payment_status, subscription_start_date
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         RETURNING *`,
         [
           customer_id,
@@ -705,6 +707,7 @@ export class AdminOrdersService implements OnModuleInit {
           'admin',
           payment_method || 'stripe',
           payment_method === 'pay_later' ? 'pay_later' : 'pending',
+          subscription_start_date || null,
         ],
       );
 
