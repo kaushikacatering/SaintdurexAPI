@@ -19,6 +19,13 @@ export class SubscriptionSchedulerService {
   async generateFutureOrders() {
     this.logger.log('Starting future order generation for subscriptions');
 
+    // Check if subscription_start_date column exists
+    const colCheck = await this.dataSource.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'orders' AND column_name = 'subscription_start_date'
+    `);
+    const hasSubStartDate = colCheck.length > 0;
+
     // Get all active subscriptions
     const activeSubscriptionsQuery = `
       SELECT 
@@ -26,7 +33,7 @@ export class SubscriptionSchedulerService {
         o.customer_id,
         o.standing_order,
         o.delivery_date_time,
-        o.subscription_start_date,
+        ${hasSubStartDate ? 'o.subscription_start_date,' : ''}
         o.order_total,
         o.delivery_fee,
         o.customer_order_name,

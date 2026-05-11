@@ -676,39 +676,42 @@ export class AdminOrdersService implements OnModuleInit {
       const shipping_method = delivery_method === 'pickup' ? 2 : 1;
       const user_id = userId || 1;
 
+      // Check which columns exist
+      const orderColCheck = await queryRunner.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'orders' 
+        AND column_name IN ('payment_method', 'payment_status', 'subscription_start_date', 'customer_from')
+      `);
+      const existingCols = orderColCheck.map((r: any) => r.column_name);
+      const hasPM = existingCols.includes('payment_method');
+      const hasPS = existingCols.includes('payment_status');
+      const hasSD = existingCols.includes('subscription_start_date');
+      const hasCF = existingCols.includes('customer_from');
+
+      // Build dynamic column list
+      const baseCols = [
+        'customer_id', 'location_id', 'branch_id', 'shipping_method', 'delivery_date_time',
+        'delivery_fee', 'order_total', 'order_status', 'order_comments', 'coupon_id',
+        'coupon_discount', 'delivery_address', 'delivery_method', 'account_email',
+        'cost_center', 'delivery_contact', 'delivery_details', 'standing_order', 'user_id',
+      ];
+      const baseValues: any[] = [
+        customer_id, location_id, branch_id, shipping_method, finalDeliveryDateTime,
+        deliveryFeeAmount, orderTotal, 1, order_comments, couponId,
+        couponDiscount, delivery_address, delivery_method, account_email,
+        cost_center, delivery_contact, delivery_details, standing_order, user_id,
+      ];
+
+      if (hasCF) { baseCols.push('customer_from'); baseValues.push('admin'); }
+      if (hasPM) { baseCols.push('payment_method'); baseValues.push(payment_method || 'stripe'); }
+      if (hasPS) { baseCols.push('payment_status'); baseValues.push(payment_method === 'pay_later' ? 'pay_later' : 'pending'); }
+      if (hasSD) { baseCols.push('subscription_start_date'); baseValues.push(subscription_start_date || null); }
+
+      const placeholders = baseCols.map((_, i) => `$${i + 1}`).join(', ');
+
       const orderResult = await queryRunner.query(
-        `INSERT INTO orders (
-          customer_id, location_id, branch_id, shipping_method, delivery_date_time, delivery_fee, order_total,
-          order_status, order_comments, coupon_id, coupon_discount, delivery_address, delivery_method,
-          account_email, cost_center, delivery_contact, delivery_details, standing_order, user_id, customer_from,
-          payment_method, payment_status, subscription_start_date
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-        RETURNING *`,
-        [
-          customer_id,
-          location_id,
-          branch_id,
-          shipping_method,
-          finalDeliveryDateTime,
-          deliveryFeeAmount,
-          orderTotal,
-          1, // New order status (1 = New, 2 = Paid)
-          order_comments,
-          couponId,
-          couponDiscount,
-          delivery_address,
-          delivery_method,
-          account_email,
-          cost_center,
-          delivery_contact,
-          delivery_details,
-          standing_order,
-          user_id,
-          'admin',
-          payment_method || 'stripe',
-          payment_method === 'pay_later' ? 'pay_later' : 'pending',
-          subscription_start_date || null,
-        ],
+        `INSERT INTO orders (${baseCols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+        baseValues,
       );
 
       const order = orderResult[0];

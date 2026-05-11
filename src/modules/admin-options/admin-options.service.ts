@@ -7,23 +7,37 @@ export class AdminOptionsService {
 
   constructor(private dataSource: DataSource) { }
 
+  private async hasSubscriberPriceColumn(): Promise<boolean> {
+    const result = await this.dataSource.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+    `);
+    return result.length > 0;
+  }
+
+  private buildOptionValueJson(hasSubscriberPrice: boolean): string {
+    return `json_build_object(
+              'option_value_id', ov.option_value_id,
+              'name', ov.name,
+              'sort_order', ov.sort_order,
+              'standard_price', ov.standard_price,
+              'wholesale_price', ov.wholesale_price,
+              'wholesale_price_premium', ov.wholesale_price_premium
+              ${hasSubscriberPrice ? ", 'subscriber_price', ov.subscriber_price" : ""}
+            )`;
+  }
+
   async findAll(query: any): Promise<any> {
     const { limit = 20, offset = 0, search } = query;
+    const hasSubPrice = await this.hasSubscriberPriceColumn();
+    const ovJson = this.buildOptionValueJson(hasSubPrice);
 
     let sqlQuery = `
       SELECT 
         o.*,
         (
           SELECT json_agg(
-            json_build_object(
-              'option_value_id', ov.option_value_id,
-              'name', ov.name,
-              'sort_order', ov.sort_order,
-              'standard_price', ov.standard_price,
-              'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium,
-              'subscriber_price', ov.subscriber_price
-            ) ORDER BY ov.sort_order
+            ${ovJson} ORDER BY ov.sort_order
           )
           FROM option_value ov
           WHERE ov.option_id = o.option_id
@@ -62,20 +76,15 @@ export class AdminOptionsService {
   }
 
   async findOne(id: number): Promise<any> {
+    const hasSubPrice = await this.hasSubscriberPriceColumn();
+    const ovJson = this.buildOptionValueJson(hasSubPrice);
+
     const result = await this.dataSource.query(
       `SELECT 
         o.*,
         (
           SELECT json_agg(
-            json_build_object(
-              'option_value_id', ov.option_value_id,
-              'name', ov.name,
-              'sort_order', ov.sort_order,
-              'standard_price', ov.standard_price,
-              'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium,
-              'subscriber_price', ov.subscriber_price
-            ) ORDER BY ov.sort_order
+            ${ovJson} ORDER BY ov.sort_order
           )
           FROM option_value ov
           WHERE ov.option_id = o.option_id
@@ -103,60 +112,67 @@ export class AdminOptionsService {
     const finalOptionType = option_type && validOptionTypes.includes(option_type) ? option_type : 'dropdown';
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.query(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'option_value' AND column_name = 'wholesale_price_premium'
-          ) THEN
-            ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
-          END IF;
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
-          ) THEN
-            ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
-          END IF;
-        END
-        $$;
-      `);
+      // Try to add columns - will fail silently if user doesn't own table
+      try {
+        await manager.query(`
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'option_value' AND column_name = 'wholesale_price_premium'
+            ) THEN
+              ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+            ) THEN
+              ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
+            END IF;
+          END
+          $$;
+        `);
+      } catch (e) {
+        this.logger.warn('Could not add columns to option_value (permission issue):', e);
+      }
+
+      const hasSubPrice = await this.hasSubscriberPriceColumn();
+
       const result = await manager.query(`INSERT INTO options (name, option_type) VALUES ($1, $2) RETURNING *`, [name, finalOptionType]);
       const newOption = result[0];
 
       if (values && Array.isArray(values) && values.length > 0) {
+        const insertCols = hasSubPrice
+          ? 'option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price'
+          : 'option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium';
+        const insertPlaceholders = hasSubPrice ? '$1, $2, $3, $4, $5, $6, $7' : '$1, $2, $3, $4, $5, $6';
+
         for (let i = 0; i < values.length; i++) {
           const value = values[i];
+          const insertParams: any[] = [
+            newOption.option_id,
+            value.name,
+            value.sort_order || i + 1,
+            value.standard_price || 0,
+            value.wholesale_price || (value.standard_price || 0) * 0.9,
+            value.wholesale_price_premium ?? null,
+          ];
+          if (hasSubPrice) insertParams.push(value.subscriber_price ?? null);
+
           await manager.query(
-            `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              newOption.option_id,
-              value.name,
-              value.sort_order || i + 1,
-              value.standard_price || 0,
-              value.wholesale_price || (value.standard_price || 0) * 0.9,
-              value.wholesale_price_premium ?? null,
-              value.subscriber_price ?? null,
-            ]
+            `INSERT INTO option_value (${insertCols}) VALUES (${insertPlaceholders})`,
+            insertParams
           );
         }
       }
 
+      const ovJson = this.buildOptionValueJson(hasSubPrice);
       const completeOption = await manager.query(
         `SELECT 
           o.*,
           (
             SELECT json_agg(
-              json_build_object(
-                'option_value_id', ov.option_value_id,
-                'name', ov.name,
-                'sort_order', ov.sort_order,
-                'standard_price', ov.standard_price,
-                'wholesale_price', ov.wholesale_price,
-                'wholesale_price_premium', ov.wholesale_price_premium,
-                'subscriber_price', ov.subscriber_price
-              ) ORDER BY ov.sort_order
+              ${ovJson} ORDER BY ov.sort_order
             )
             FROM option_value ov
             WHERE ov.option_id = o.option_id
@@ -174,24 +190,32 @@ export class AdminOptionsService {
     const { name, option_type, values } = updateOptionDto;
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.query(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'option_value' AND column_name = 'wholesale_price_premium'
-          ) THEN
-            ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
-          END IF;
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
-          ) THEN
-            ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
-          END IF;
-        END
-        $$;
-      `);
+      // Try to add columns - will fail silently if user doesn't own table
+      try {
+        await manager.query(`
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'option_value' AND column_name = 'wholesale_price_premium'
+            ) THEN
+              ALTER TABLE option_value ADD COLUMN wholesale_price_premium DECIMAL(15,4);
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+            ) THEN
+              ALTER TABLE option_value ADD COLUMN subscriber_price DECIMAL(15,4);
+            END IF;
+          END
+          $$;
+        `);
+      } catch (e) {
+        this.logger.warn('Could not add columns to option_value (permission issue):', e);
+      }
+
+      const hasSubPrice = await this.hasSubscriberPriceColumn();
+
       const updates: string[] = [];
       const params: any[] = [];
       let paramIndex = 1;
@@ -244,53 +268,55 @@ export class AdminOptionsService {
           const value = values[i];
           if (value.option_value_id) {
             // Update existing
+            const updateSetClause = hasSubPrice
+              ? 'name = $1, sort_order = $2, standard_price = $3, wholesale_price = $4, wholesale_price_premium = $5, subscriber_price = $6'
+              : 'name = $1, sort_order = $2, standard_price = $3, wholesale_price = $4, wholesale_price_premium = $5';
+            const updateParams: any[] = [
+              value.name,
+              value.sort_order || i + 1,
+              value.standard_price || 0,
+              value.wholesale_price || (value.standard_price || 0) * 0.9,
+              value.wholesale_price_premium ?? null,
+            ];
+            if (hasSubPrice) updateParams.push(value.subscriber_price ?? null);
+            updateParams.push(value.option_value_id);
+            const whereIdx = updateParams.length;
+
             await manager.query(
-              `UPDATE option_value 
-               SET name = $1, sort_order = $2, standard_price = $3, wholesale_price = $4, wholesale_price_premium = $5, subscriber_price = $6
-               WHERE option_value_id = $7`,
-              [
-                value.name,
-                value.sort_order || i + 1,
-                value.standard_price || 0,
-                value.wholesale_price || (value.standard_price || 0) * 0.9,
-                value.wholesale_price_premium ?? null,
-                value.subscriber_price ?? null,
-                value.option_value_id
-              ]
+              `UPDATE option_value SET ${updateSetClause} WHERE option_value_id = $${whereIdx}`,
+              updateParams
             );
           } else {
             // Insert new
+            const insertCols = hasSubPrice
+              ? 'option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price'
+              : 'option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium';
+            const insertPlaceholders = hasSubPrice ? '$1, $2, $3, $4, $5, $6, $7' : '$1, $2, $3, $4, $5, $6';
+            const insertParams: any[] = [
+              id,
+              value.name,
+              value.sort_order || i + 1,
+              value.standard_price || 0,
+              value.wholesale_price || (value.standard_price || 0) * 0.9,
+              value.wholesale_price_premium ?? null,
+            ];
+            if (hasSubPrice) insertParams.push(value.subscriber_price ?? null);
+
             await manager.query(
-              `INSERT INTO option_value (option_id, name, sort_order, standard_price, wholesale_price, wholesale_price_premium, subscriber_price) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [
-                id,
-                value.name,
-                value.sort_order || i + 1,
-                value.standard_price || 0,
-                value.wholesale_price || (value.standard_price || 0) * 0.9,
-                value.wholesale_price_premium ?? null,
-                value.subscriber_price ?? null,
-              ]
+              `INSERT INTO option_value (${insertCols}) VALUES (${insertPlaceholders})`,
+              insertParams
             );
           }
         }
       }
 
+      const ovJson = this.buildOptionValueJson(hasSubPrice);
       const completeOption = await manager.query(
         `SELECT 
           o.*,
           (
             SELECT json_agg(
-              json_build_object(
-                'option_value_id', ov.option_value_id,
-                'name', ov.name,
-                'sort_order', ov.sort_order,
-                'standard_price', ov.standard_price,
-                'wholesale_price', ov.wholesale_price,
-                'wholesale_price_premium', ov.wholesale_price_premium,
-                'subscriber_price', ov.subscriber_price
-              ) ORDER BY ov.sort_order
+              ${ovJson} ORDER BY ov.sort_order
             )
             FROM option_value ov
             WHERE ov.option_id = o.option_id

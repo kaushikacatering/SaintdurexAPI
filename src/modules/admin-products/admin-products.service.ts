@@ -89,6 +89,13 @@ export class AdminProductsService {
   }) {
     const { limit = 20, offset = 0, search, status } = filters;
 
+    // Check if subscriber_price column exists on option_value
+    const subPriceCheck = await this.dataSource.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+    `);
+    const hasSubscriberPrice = subPriceCheck.length > 0;
+
     let query = `
       SELECT 
         p.*,
@@ -112,8 +119,8 @@ export class AdminProductsService {
               'option_required', po.option_required,
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
-              'wholesale_price_premium', ov.wholesale_price_premium,
-              'subscriber_price', ov.subscriber_price
+              'wholesale_price_premium', ov.wholesale_price_premium
+              ${hasSubscriberPrice ? ", 'subscriber_price', ov.subscriber_price" : ""}
             )
           )
           FROM product_option po
@@ -292,12 +299,14 @@ export class AdminProductsService {
     };
   }
 
-  /**
-   * Get single product
-   * @param id - Product ID
-   * @param customer_id - Optional: if provided, prices will be calculated based on customer type and discounts
-   */
   async getProduct(id: number, customer_id?: number) {
+    // Check if subscriber_price column exists on option_value
+    const subPriceCheck = await this.dataSource.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'option_value' AND column_name = 'subscriber_price'
+    `);
+    const hasSubscriberPrice = subPriceCheck.length > 0;
+
     const query = `
       SELECT 
         p.*,
@@ -322,7 +331,7 @@ export class AdminProductsService {
               'standard_price', ov.standard_price,
               'wholesale_price', ov.wholesale_price,
               'wholesale_price_premium', ov.wholesale_price_premium,
-              'subscriber_price', ov.subscriber_price,
+              ${hasSubscriberPrice ? "'subscriber_price', ov.subscriber_price," : ""}
               'discount_percentage', 0
             )
           )
@@ -623,14 +632,16 @@ export class AdminProductsService {
       // Set default visibility if not provided
       const visibility = customer_type_visibility || 'all';
 
-      // Create product (conditionally include user_price if column exists)
-      const userPriceColumnCheck = await queryRunner.query(`
+      // Create product (conditionally include columns that may not exist)
+      const colCheckResult = await queryRunner.query(`
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name = 'product' 
-          AND column_name = 'user_price'
+          AND column_name IN ('user_price', 'subscriber_rate')
       `);
-      const hasUserPrice = userPriceColumnCheck.length > 0;
+      const existingProdCols = colCheckResult.map((r: any) => r.column_name);
+      const hasUserPrice = existingProdCols.includes('user_price');
+      const hasSubscriberRate = existingProdCols.includes('subscriber_rate');
 
       const columns: string[] = [
         'product_name',
@@ -657,7 +668,6 @@ export class AdminProductsService {
         'premium_discount_percentage',
         'product_price_premium',
         'premium_price_discounted',
-        'subscriber_rate',
         'product_desc_1',
         'product_desc_2',
         'product_desc_3',
@@ -689,13 +699,17 @@ export class AdminProductsService {
         premium_discount_percentage !== undefined ? premium_discount_percentage : null,
         product_price_premium !== undefined ? product_price_premium : null,
         premium_price_discounted !== undefined ? premium_price_discounted : null,
-        subscriber_rate !== undefined ? subscriber_rate : null,
         product_desc_1 || null,
         product_desc_2 || null,
         product_desc_3 || null,
         product_desc_4 || null,
         product_desc_5 || null,
       ];
+
+      if (hasSubscriberRate) {
+        columns.push('subscriber_rate');
+        values.push(subscriber_rate !== undefined ? subscriber_rate : null);
+      }
 
       if (hasUserPrice) {
         columns.push('user_price');
@@ -1044,8 +1058,15 @@ export class AdminProductsService {
         updateParams.push(premium_price_discounted);
       }
       if (subscriber_rate !== undefined) {
-        updateFields.push(`subscriber_rate = $${paramIndex++}`);
-        updateParams.push(subscriber_rate);
+        // Check if subscriber_rate column exists before trying to update it
+        const subRateCheck = await queryRunner.query(`
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'product' AND column_name = 'subscriber_rate'
+        `);
+        if (subRateCheck.length > 0) {
+          updateFields.push(`subscriber_rate = $${paramIndex++}`);
+          updateParams.push(subscriber_rate);
+        }
       }
       if (product_desc_1 !== undefined) {
         updateFields.push(`product_desc_1 = $${paramIndex++}`);
