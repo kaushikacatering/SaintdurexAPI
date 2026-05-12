@@ -38,8 +38,8 @@ export class FileStorageService {
     const dir = path.join(this.uploadBaseDir, folder);
     const filePath = path.join(dir, finalFileName);
 
-    // Ensure directory exists
-    fs.mkdirSync(dir, { recursive: true });
+    // Ensure full directory path exists (handles subdirectories in fileName like "blogs/...")
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, file);
 
     const key = `${folder}/${finalFileName}`;
