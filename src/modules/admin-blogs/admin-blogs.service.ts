@@ -208,16 +208,23 @@ export class AdminBlogsService {
       publishedDate = new Date();
     }
 
+    // Explicitly compute next blog_id to avoid broken SERIAL sequence issues
+    const nextIdResult = await this.dataSource.query(
+      'SELECT COALESCE(MAX(blog_id), 0) + 1 as next_id FROM blogs'
+    );
+    const nextId = nextIdResult[0].next_id;
+
     const query = `
       INSERT INTO blogs (
-        title, slug, category, excerpt, content, featured_image_url,
+        blog_id, title, slug, category, excerpt, content, featured_image_url,
         author, tags, read_time, is_featured, is_published, published_date, created_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `;
 
     const params = [
+      nextId,
       data.title,
       data.slug,
       data.category || null,
