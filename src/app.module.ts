@@ -40,6 +40,7 @@ import { AdminReviewsModule } from './modules/admin-reviews/admin-reviews.module
 import { AdminEmailConfigModule } from './modules/admin-email-config/admin-email-config.module';
 import { AdminHistoryModule } from './modules/admin-history/admin-history.module';
 import { AdminNewsletterModule } from './modules/admin-newsletter/admin-newsletter.module';
+import { AdminXeroModule } from './modules/admin-xero/admin-xero.module';
 import { StoreProductsModule } from './modules/store-products/store-products.module';
 import { StoreOrdersModule } from './modules/store-orders/store-orders.module';
 import { StoreCartModule } from './modules/store-cart/store-cart.module';
@@ -93,6 +94,7 @@ import { AppService } from './app.service';
     AdminEmailConfigModule,
     AdminHistoryModule,
     AdminNewsletterModule,
+    AdminXeroModule,
     // Store Modules
     StoreProductsModule,
     StoreOrdersModule,

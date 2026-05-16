@@ -57,7 +57,8 @@
     "stripe": "^20.0.0",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.27",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xero-node": "^16.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

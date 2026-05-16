@@ -4,9 +4,10 @@ import { AdminOrdersController } from './admin-orders.controller';
 import { AdminOrdersService } from './admin-orders.service';
 import { Order } from '../../entities/Order';
 import { CommonModule } from '../../common/common.module';
+import { AdminXeroModule } from '../admin-xero/admin-xero.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order]), CommonModule],
+  imports: [TypeOrmModule.forFeature([Order]), CommonModule, AdminXeroModule],
   controllers: [AdminOrdersController],
   providers: [AdminOrdersService],
   exports: [AdminOrdersService],

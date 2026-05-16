@@ -12,6 +12,7 @@ import { EmailService } from "../../common/services/email.service";
 import { NotificationService } from "../../common/services/notification.service";
 import { InvoiceService } from "../../common/services/invoice.service";
 import { ConfigService } from "@nestjs/config";
+import { AdminXeroService } from "../admin-xero/admin-xero.service";
 
 @Injectable()
 export class StorePaymentService {
@@ -24,6 +25,7 @@ export class StorePaymentService {
     private notificationService: NotificationService,
     private invoiceService: InvoiceService,
     private configService: ConfigService,
+    private xeroService: AdminXeroService,
   ) { }
 
   /**
@@ -793,6 +795,18 @@ export class StorePaymentService {
           "Failed to send payment confirmation email:",
           emailError,
         );
+      }
+
+      // Create invoice in Xero for the paid order
+      try {
+        const xeroStatus = await this.xeroService.isConnected();
+        if (xeroStatus.connected) {
+          const xeroResult = await this.xeroService.createInvoiceForOrder(parseInt(orderId.toString()));
+          this.logger.log(`[Xero] Invoice ${xeroResult.invoiceNumber} created for order ${orderId}`);
+        }
+      } catch (xeroError) {
+        this.logger.error(`[Xero] Failed to create invoice for order ${orderId}:`, xeroError);
+        // Don't fail the payment flow if Xero fails
       }
     } catch (error) {
       await queryRunner.rollbackTransaction();

@@ -6,6 +6,7 @@ import { Order } from '../../entities/Order';
 import { EmailService } from '../../common/services/email.service';
 import { InvoiceService } from '../../common/services/invoice.service';
 import { NotificationService } from '../../common/services/notification.service';
+import { AdminXeroService } from '../admin-xero/admin-xero.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class AdminOrdersService implements OnModuleInit {
     private invoiceService: InvoiceService,
     private notificationService: NotificationService,
     private configService: ConfigService,
+    private xeroService: AdminXeroService,
   ) { }
 
   async onModuleInit() {
@@ -1319,6 +1321,18 @@ export class AdminOrdersService implements OnModuleInit {
         }
       } catch (emailError) {
         this.logger.error('Failed to send manual payment confirmation email:', emailError);
+      }
+
+      // Create invoice in Xero for the paid order
+      try {
+        const xeroStatus = await this.xeroService.isConnected();
+        if (xeroStatus.connected) {
+          const xeroResult = await this.xeroService.createInvoiceForOrder(id);
+          this.logger.log(`[Xero] Invoice ${xeroResult.invoiceNumber} created for order ${id}`);
+        }
+      } catch (xeroError) {
+        this.logger.error(`[Xero] Failed to create invoice for order ${id}:`, xeroError);
+        // Don't fail the payment flow if Xero fails
       }
 
     } catch (error) {
