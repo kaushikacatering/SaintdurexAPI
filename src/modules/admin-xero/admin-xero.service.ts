@@ -1,11 +1,11 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { XeroClient, Invoice, LineItem, Contact, Invoices, Phone, Contacts, CurrencyCode } from 'xero-node';
 import { DataSource } from 'typeorm';
 import { TokenSet } from 'openid-client';
 
 @Injectable()
-export class AdminXeroService {
+export class AdminXeroService implements OnModuleInit {
   private readonly logger = new Logger(AdminXeroService.name);
   private xero: XeroClient;
 
@@ -19,6 +19,36 @@ export class AdminXeroService {
       redirectUris: [this.configService.get<string>('XERO_REDIRECT_URI') || ''],
       scopes: (this.configService.get<string>('XERO_SCOPES') || 'openid profile email accounting.transactions accounting.contacts accounting.settings').split(' '),
     });
+  }
+
+  async onModuleInit() {
+    try {
+      await this.dataSource.query(`
+        CREATE TABLE IF NOT EXISTS xero_tokens (
+          id INTEGER PRIMARY KEY DEFAULT 1,
+          tenant_id VARCHAR(255) NOT NULL,
+          token_data JSONB NOT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT single_row CHECK (id = 1)
+        )
+      `);
+      await this.dataSource.query(`
+        CREATE TABLE IF NOT EXISTS xero_invoice_sync (
+          id SERIAL PRIMARY KEY,
+          order_id INTEGER NOT NULL UNIQUE,
+          xero_invoice_id VARCHAR(255) NOT NULL,
+          xero_invoice_number VARCHAR(100),
+          xero_contact_id VARCHAR(255),
+          synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await this.dataSource.query(`
+        CREATE INDEX IF NOT EXISTS idx_xero_invoice_sync_order_id ON xero_invoice_sync(order_id)
+      `);
+      this.logger.log('Xero tables ensured');
+    } catch (error) {
+      this.logger.error('Failed to create Xero tables:', error);
+    }
   }
 
   /**
